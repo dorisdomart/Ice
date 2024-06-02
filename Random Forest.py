@@ -22,21 +22,17 @@ from sklearn import metrics
 from sklearn.metrics import r2_score, confusion_matrix, classification_report
 
 
-# Thresholds for freeze-up and break-up dates = 0.5
+# Thresholds for freeze-up and break-up dates = 50% of ice fraction
 FU_thresh = 'FU50hy'
 BU_thresh = 'BU50hy'
 thresh = 0.5
 
-# Colors for plots
-colorHydroLAKES = 'dodgerblue'
-colorGRanD = 'darkorange'
-colorFU = 'olivedrab'
-colorBU = 'red'
 
 # Paths
-general_path = os.path.abspath(os.path.join(__file__, r'../../../'))
+general_path = os.path.abspath(os.path.join(__file__, r'..'))
 
-df_all = pd.read_csv(os.path.join(general_path, 'Data', 'GEE', 'all_phenology.csv'))
+# Import ice phenology database for calibration of the model
+df_all = pd.read_csv(os.path.join(general_path, 'all_phenology.csv'))
 
 # Performance metrics function
 def metrics_calc(y_train, y_test, pred_train, pred_test):
@@ -53,16 +49,16 @@ def metrics_calc(y_train, y_test, pred_train, pred_test):
 #%% Random Forest arrays
 
 """
-GRanD dataset : dfG
-HydroLAKES dataset : dfH
+GRanD dataset : dfGRanD
+HydroLAKES dataset : dfHydro
 Combined (lakes and reservoirs) dataset : df_all
 
 Classifier :
-Input variables : 'latitude', 'longitude', 'elevation', 'area', 'meandepth', 'capacity', 'max_icefraction', 'AFDDmax', 'delay_dd', 'delay_days'
+Input variables : 'latitude', 'longitude', 'elevation', 'area', 'meandepth', 'res_time', 'max_icefraction', 'maxafdd', 'first_neg_datehy', 'total_radiation', 'solid_precip', 'mix_layer_depth'
 Output variables : 'ice' 0 (max_ice_fraction < 0.5) or 1 (max_ice_fraction > 0.5)
 
 Regressor : 
-Input variables : 'latitude', 'longitude', 'elevation', 'area', 'meandepth', 'capacity', 'max_icefraction', 'AFDDmax', 'delay_dd', 'delay_days'
+Input variables : 'latitude', 'longitude', 'elevation', 'area', 'meandepth', 'res_time', 'max_icefraction', 'maxafdd', 'first_neg_datehy', 'total_radiation', 'solid_precip', 'mix_layer_depth'
 Output variables : 'FU50hy', 'BU50hy'
 
 
@@ -120,8 +116,6 @@ groups_BU = df_BU[['i_lake', 'year']]
 
 # Split train/test for classifier
 X_train_class, X_test_class, y_train_class, y_test_class, y_train_groups_ice, y_test_groups_ice = train_test_split(df_input_ice, df_output_ice, groups_ice, test_size = 0.8, random_state = 42)
-# X_train_FU, X_test_FU, y_train_FU, y_test_FU, y_train_groups_FU, y_test_groups_FU = train_test_split(df_input_FU, df_output_FU, groups_FU, test_size = 0.8, random_state = 42)
-# X_train_BU, X_test_BU, y_train_BU, y_test_BU, y_train_groups_BU, y_test_groups_BU = train_test_split(df_input_BU, df_output_BU, groups_BU, test_size = 0.8, random_state = 42)
 
 # Count number of observations for classifier calibration 
 G_ice = y_train_groups_ice[y_train_groups_ice['i_lake'].str.contains('G')]
@@ -166,8 +160,6 @@ plt.yticks(tick_marks2,class_names, rotation=0)
 plt.xlabel('Predicted')
 plt.ylabel('Observed (Sentinel-2)')
 
-plt.savefig('/Users/doris/Desktop/confusion_matrix.png', bbox_inches='tight', format="png", dpi=1200)
-plt.savefig('/Users/doris/Desktop/confusion_matrix.svg', bbox_inches='tight')
 
 # Feature importance for classifier:
 # Get numerical feature importances
@@ -182,11 +174,6 @@ feature_importances_class = sorted(feature_importances_class, key = lambda x: x[
 x_values = list(range(len(importances)))
 
 
-# Fig. 14. 
-
-df_classifier['Diff'] = df_classifier['y_pred_class'] - df_classifier['y_test_class']
-
-df_classifier.to_csv('/Users/doris/Desktop/df_classifier.csv')
 
 #%% Regressor
 
@@ -221,8 +208,6 @@ groups_BU = df_BU[['i_lake', 'year']]
 
 # Regressor
 
-rf_regressor = RandomForestRegressor()
-
 # Split train/test
 X_train_FU, X_test_FU, y_train_FU, y_test_FU, y_train_groups_FU, y_test_groups_FU = train_test_split(df_input_FU, df_output_FU, groups_FU, test_size = 0.25, random_state = 42)
 X_train_BU, X_test_BU, y_train_BU, y_test_BU, y_train_groups_BU, y_test_groups_BU = train_test_split(df_input_BU, df_output_BU, groups_BU, test_size = 0.25, random_state = 42)
@@ -244,16 +229,18 @@ H_BU = groups_BU[groups_BU['i_lake'].str.contains('H')]
 
 
 # Train the model on training set
-rf_regressor.fit(X_train_FU, y_train_FU) 
-pred_train_FU = rf_regressor.predict(X_train_FU)
+rf_regressor_FU = RandomForestRegressor()
+
+rf_regressor_FU.fit(X_train_FU, y_train_FU) 
+pred_train_FU = rf_regressor_FU.predict(X_train_FU)
 
 # Test the model on testing set
-pred_test_FU = rf_regressor.predict(X_test_FU)
+pred_test_FU = rf_regressor_FU.predict(X_test_FU)
 
 
 # Feature importance for freeze-up:
 # Get numerical feature importances
-importancesFU = list(rf_regressor.feature_importances_)
+importancesFU = list(rf_regressor_FU.feature_importances_)
 # List of tuples with variable and importance
 feature_importances_FU = [(feature, round(importance, 2)) for feature, importance in zip(feature_list, importancesFU)]
 # Sort the feature importances by most important first
@@ -270,16 +257,19 @@ x_values = list(range(len(importancesFU)))
 # # # # # # # # # #
 
 # Train the model on training set
-rf_regressor.fit(X_train_BU, y_train_BU) 
-pred_train_BU = rf_regressor.predict(X_train_BU)
+rf_regressor_BU = RandomForestRegressor()
+
+
+rf_regressor_BU.fit(X_train_BU, y_train_BU) 
+pred_train_BU = rf_regressor_BU.predict(X_train_BU)
 
 # Test the model on testing set
-pred_test_BU = rf_regressor.predict(X_test_BU)
+pred_test_BU = rf_regressor_BU.predict(X_test_BU)
 
 
 # Feature importance
 # Get numerical feature importances
-importancesBU = list(rf_regressor.feature_importances_)
+importancesBU = list(rf_regressor_BU.feature_importances_)
 # List of tuples with variable and importance
 feature_importances_BU = [(feature, round(importance, 2)) for feature, importance in zip(feature_list, importancesBU)]
 # Sort the feature importances by most important first
@@ -292,9 +282,9 @@ x_values = list(range(len(importancesBU)))
 
 
 
-# # # # # # # # # #
-#  Stats/analysis #
-# # # # # # # # # #
+# # # # # # # # # # # # #
+#  Performance metrics  #
+# # # # # # # # # # # # #
 
 MAE_train_FU, MAE_test_FU, r2_train_FU, r2_test_FU = metrics_calc(y_train_FU, y_test_FU, pred_train_FU, pred_test_FU)
 MAE_train_BU, MAE_test_BU, r2_train_BU, r2_test_BU = metrics_calc(y_train_BU, y_test_BU, pred_train_BU, pred_test_BU)
@@ -342,66 +332,48 @@ ax[1].legend(['Freeze-up (MAE={} days, R$^2$={:.2f})'.format(int(MAE_test_FU), r
             'Break-up (MAE={} days, R$^2$={:.2f})'.format(int(MAE_test_BU), r2_test_BU)], 
          markerscale=3, frameon=False, loc='upper left')
 
-fig.savefig('/Users/doris/Desktop/performance_reg_combined.png', bbox_inches='tight', format="png", dpi=1200)
-# fig.savefig('/Users/doris/Desktop/performance_reg_combined.pdf', bbox_inches='tight')
-fig.savefig('/Users/doris/Desktop/performance_reg_combined.svg', bbox_inches='tight')
 
 
+#%% Apply model to a single lake :
+
+""" 
+Import a dataframe with the 12 features as: 
+1. Latitude, 
+2. Longitude, 
+3. Elelevation
+4. Area
+5. Mean depth
+6. Residence time
+7. Maximum accumulation of freezing degree days during the wanted year
+8. Date corresponding to this maximum accumulation of freezing degree days (in hydrological year : Aug 1 = 1)
+9. Date of first negative temperature in the fall (in hydrological year : Aug 1 = 1)
+10. Total shortwave radiation (from ERA5-Land)
+11. Solid precipitation during the year (from Aug 1 to July 31)
+12. Mixed layer depth (from ERA5-Land). 
 
 
+The dates outputs (freeze-up and break-up) are in day of year from August 1 (August 1 corresponds to day 1)
 
-#%% Feature importance
+"""
+ 
+lake = df_ice.loc[3]
+lake_input = np.array(lake[input_features])
+lake_input = lake_input.reshape(1, -1)
 
-feature_importances_class = pd.DataFrame(feature_importances_class)
-feature_importances_FU = pd.DataFrame(feature_importances_FU)
-feature_importances_BU = pd.DataFrame(feature_importances_BU)
-
-
-# Classifier 
-csfont = {'fontname':'Arial'}
-plt.rc('font', size=22)  
-fig,ax = plt.subplots(1, figsize=(7, 8), constrained_layout=True)
-    #Freeze-up
-ax.barh(feature_importances_class[0], feature_importances_class[1], color='blue')
-ax.set_xlim([0,0.6])
-ax.set_yticks(x_values, feature_importances_class[0])
-ax.set_xlabel('Feature importance')
-ax.get_xaxis().set_label_coords(0.5,-0.09)
-ax.invert_yaxis()
-ax.tick_params(axis='x', which='both', pad=10, top=False, right=False, length=5, width=1, direction='in')
-ax.set_xticks(np.arange(0, 0.7, 0.1))
+# Classifier (if output is 1, ice forms on the lake, while if output is 0, there is no ice)
+pred_class = rf_classifier.predict(lake_input) 
 
 
+if pred_class == 0:
+    print('No ice, regressor is not applied')
+    
+elif pred_class == 1:
+        print('Ice, freeze-up and break-up dates prediction using regressor:')
+        pred_FU = rf_regressor_FU.predict(lake_input)
+        pred_BU = rf_regressor_BU.predict(lake_input)
+           
+        print('Freeze-up = {} and break-up = {}'.format(pred_FU[0], pred_BU[0]))
+        
+        
 
-
-# Regressor
-csfont = {'fontname':'Arial'}
-plt.rc('font', size=10)  
-fig,ax = plt.subplots(1,2, figsize=(7, 4), constrained_layout=True)
-
-# Freeze-up    
-ax[0].barh(feature_importances_FU[0], feature_importances_FU[1], color='mediumseagreen')
-ax[0].set_xlim([0,0.6])
-ax[0].set_yticks(x_values, feature_importances_FU[0])
-ax[0].set_xlabel('Feature importance')
-ax[0].get_xaxis().set_label_coords(0.5,-0.09)
-ax[0].set_title('(a) Freeze-up date', pad=10, fontweight="bold")
-ax[0].invert_yaxis()
-ax[0].tick_params(axis='x', which='both', pad=5, top=False, right=False, length=3, width=1, direction='in')
-ax[0].set_xticks(np.arange(0, 0.7, 0.1))
-
-# Break-up    
-ax[1].barh(feature_importances_BU[0], feature_importances_BU[1], color='red')
-ax[1].set_xlim([0,0.6])
-ax[1].set_yticks(x_values, feature_importances_BU[0])
-ax[1].set_xlabel('Feature importance')
-ax[1].get_xaxis().set_label_coords(0.5,-0.09)
-ax[1].set_title('(b) Break-up date', pad=10, fontweight="bold")
-ax[1].invert_yaxis()
-ax[1].tick_params(axis='x', which='both', pad=5, top=False, right=False, length=3, width=1, direction='in')
-ax[1].set_xticks(np.arange(0, 0.7, 0.1))
-
-fig.savefig('/Users/doris/Desktop/Feature_importance_res_lakes_combined_reg.png', bbox_inches='tight', format="png", dpi=1600)
-fig.savefig('/Users/doris/Desktop/Feature_importance_res_lakes_combined_reg.pdf', bbox_inches='tight')
-fig.savefig('/Users/doris/Desktop/Feature_importance_res_lakes_combined_reg.svg', bbox_inches='tight')
 
